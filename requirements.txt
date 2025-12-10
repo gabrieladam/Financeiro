@@ -4,3 +4,4 @@ kaleido
 supabase
 pandas
 python-dateutil
+streamlit-aggrid
