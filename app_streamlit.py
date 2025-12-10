@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Dashboard Financeiro em Streamlit
-Versão completa com KPIs Tableau-like, gráficos interativos e % de contas parceladas pelo valor
+Versão otimizada com layout mais visual e responsivo
 """
 import os
 import streamlit as st
@@ -29,19 +29,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS customizado
 st.markdown("""
 <style>
-    .main { padding-top: 0rem; }
-    .metric-box {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    .metric-value { font-size: 28px; font-weight: bold; margin-top: 10px; }
-    .metric-label { font-size: 12px; opacity: 0.8; text-transform: uppercase; }
+.main { padding-top: 0rem; }
+.stMetric { padding: 10px; border-radius: 10px; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -89,22 +80,19 @@ if "user" not in st.session_state:
     st.session_state.user = None
 
 # ==============================
-# TELA DE LOGIN/REGISTRO
+# LOGIN / REGISTRO
 # ==============================
 if st.session_state.user is None:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
+    col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.image("https://via.placeholder.com/200?text=Financeiro", width=100)
         st.title("💰 FinanceApp")
-        
         tab_login, tab_registro = st.tabs(["Login", "Registrar"])
         
         with tab_login:
             st.subheader("Fazer Login")
             email_login = st.text_input("Email", key="email_login")
             senha_login = st.text_input("Senha", type="password", key="senha_login")
-            
             if st.button("Entrar", use_container_width=True, type="primary"):
                 ok, user = login(email_login, senha_login)
                 if ok:
@@ -119,7 +107,6 @@ if st.session_state.user is None:
             nome_cad = st.text_input("Nome", key="nome_cad")
             email_cad = st.text_input("Email", key="email_cad")
             senha_cad = st.text_input("Senha", type="password", key="senha_cad")
-            
             if st.button("Criar Conta", use_container_width=True, type="primary"):
                 if nome_cad and email_cad and senha_cad:
                     try:
@@ -135,25 +122,21 @@ if st.session_state.user is None:
 # ==============================
 else:
     user = st.session_state.user
-    
-    # Header
-    col_title, col_logout = st.columns([0.9, 0.1])
+    col_title, col_logout = st.columns([0.9,0.1])
     with col_title:
         st.title(f"💰 Dashboard Financeiro - {user['nome']}")
     with col_logout:
         if st.button("Sair"):
             st.session_state.user = None
             st.rerun()
-    
     st.divider()
     
     # ==============================
-    # SIDEBAR - FILTROS
+    # SIDEBAR
     # ==============================
     with st.sidebar:
         st.header("🔍 Filtros")
         dados = listar_installments(user["id"])
-        
         if not dados:
             st.warning("Nenhum lançamento encontrado!")
         else:
@@ -167,140 +150,104 @@ else:
             # Filtros
             anos = sorted(df["ano"].unique(), reverse=True)
             ano_sel = st.selectbox("Ano:", anos, index=0)
-            meses_disponiveis = sorted(df[df["ano"] == ano_sel]["mes_num"].unique())
+            meses_disponiveis = sorted(df[df["ano"]==ano_sel]["mes_num"].unique())
             mes_sel = st.multiselect("Mês:", meses_disponiveis, default=meses_disponiveis)
             tipos = sorted(df["tipo"].dropna().unique())
             tipo_sel = st.multiselect("Tipo:", tipos, default=tipos)
             cartoes = sorted(df["cartao"].fillna("").unique())
             cartao_sel = st.multiselect("Cartão:", cartoes, default=cartoes)
             
-            # Aplicar filtros
             df_filtrado = df[
-                (df["ano"] == ano_sel) &
+                (df["ano"]==ano_sel) &
                 (df["mes_num"].isin(mes_sel)) &
                 (df["tipo"].isin(tipo_sel)) &
                 (df["cartao"].isin(cartao_sel))
             ]
             
             # ==============================
-            # ADICIONAR NOVO LANÇAMENTO
+            # NOVO LANÇAMENTO
             # ==============================
             st.divider()
             st.subheader("➕ Novo Lançamento")
-            
             with st.form("form_novo_lancamento"):
                 tipo_novo = st.selectbox(
-                    "Tipo:",
-                    ["Mercado", "Alimentação", "Saude", "Transporte", "Carro", "Casa", "Emprestimo", "Roupa", "Lazer"],
-                    key="tipo_novo"
+                    "Tipo:", ["Mercado","Alimentação","Saude","Transporte","Carro","Casa","Emprestimo","Roupa","Lazer"], key="tipo_novo"
                 )
                 desc_novo = st.text_input("Descrição", key="desc_novo")
                 valor_novo = st.number_input("Valor", min_value=0.0, step=0.01, key="valor_novo")
                 data_novo = st.date_input("Data de Vencimento", key="data_novo")
                 parcelas_novo = st.number_input("Parcelas", min_value=1, value=1, key="parcelas_novo")
                 cartao_novo = st.text_input("Cartão", key="cartao_novo")
-                
                 submitted = st.form_submit_button("Adicionar", use_container_width=True, type="primary")
-                
                 if submitted:
                     try:
                         inserir_parcelas_futuras(
-                            user["id"],
-                            tipo_novo,
-                            desc_novo,
-                            valor_novo,
+                            user["id"], tipo_novo, desc_novo, valor_novo,
                             datetime.combine(data_novo, datetime.min.time()),
-                            int(parcelas_novo),
-                            cartao_novo
+                            int(parcelas_novo), cartao_novo
                         )
                         st.success("Lançamento adicionado!")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao adicionar: {e}")
-    
+
     # ==============================
-    # KPIs - ESTATÍSTICAS
+    # KPIs OTIMIZADOS
     # ==============================
     if not df_filtrado.empty:
         total_geral = df["valor"].sum()
         total_filtrado = df_filtrado["valor"].sum()
         media = df_filtrado["valor"].mean()
         num_transacoes = len(df_filtrado)
+        total_parceladas_valor = df_filtrado[df_filtrado["numero_parcela"]>1]["valor"].sum()
+        perc_parceladas_valor = (total_parceladas_valor / total_filtrado * 100) if total_filtrado>0 else 0
+        perc_avista_valor = 100 - perc_parceladas_valor
         
-        # % Parceladas pelo valor
-        total_parceladas_valor = df_filtrado[df_filtrado["numero_parcela"] > 1]["valor"].sum()
-        if total_parceladas_valor > 0:
-            perc_parceladas_valor = (total_filtrado / total_parceladas_valor) * 100
-        else:
-            perc_parceladas_valor = 0
-        
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            st.metric("💵 Total Geral", f"R$ {total_geral:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        with col2:
-            st.metric("📊 Total Filtrado", f"R$ {total_filtrado:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        with col3:
-            st.metric("📈 Média", f"R$ {media:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        with col4:
-            st.metric("📋 Transações", num_transacoes)
-        with col5:
-            st.metric("📦 % Parceladas (valor)", f"{perc_parceladas_valor:.2f}%")
-        
+        # Responsividade: KPIs em 2 linhas se tela pequena
+        kpi_cols = st.columns(5)
+        kpi_cols[0].metric("💵 Total Geral", f"R$ {total_geral:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+        kpi_cols[1].metric("📊 Total Filtrado", f"R$ {total_filtrado:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+        kpi_cols[2].metric("📈 Média", f"R$ {media:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+        kpi_cols[3].metric("📋 Transações", num_transacoes)
+        kpi_cols[4].metric("📦 % Parceladas", f"{perc_parceladas_valor:.2f}%")
         st.divider()
         
         # ==============================
-        # GRÁFICOS COM PLOTLY
+        # GRÁFICOS OTIMIZADOS
         # ==============================
-        col_pie, col_bar = st.columns(2)
-        
-        with col_pie:
-            st.subheader("💧 Gastos por Tipo")
+        col1, col2 = st.columns([0.5,0.5])
+        with col1:
+            st.subheader("💧 Gastos por Tipo (Donut)")
             df_tipo = df_filtrado.groupby("tipo")["valor"].sum().reset_index()
-            fig_pie = px.pie(
-                df_tipo,
-                names="tipo",
-                values="valor",
-                color_discrete_sequence=px.colors.qualitative.Set3,
-                hover_data={"valor": ":.2f"}
-            )
+            fig_pie = px.pie(df_tipo, names="tipo", values="valor", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3,
+                             hover_data={"valor": ":.2f"})
             fig_pie.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig_pie, use_container_width=True)
         
-        with col_bar:
+        with col2:
             st.subheader("📅 Gastos por Mês")
             df_mes = df.groupby(df["data_vencimento"].dt.to_period("M"))["valor"].sum().reset_index()
             df_mes.columns = ["mes", "valor"]
             df_mes["mes"] = df_mes["mes"].astype(str)
-            fig_bar = px.bar(
-                df_mes,
-                x="mes",
-                y="valor",
-                color="valor",
-                color_continuous_scale="Viridis",
-                hover_data={"valor": ":.2f"}
-            )
+            fig_bar = px.bar(df_mes, x="mes", y="valor", color="valor", color_continuous_scale="Viridis", hover_data={"valor": ":.2f"})
             fig_bar.update_layout(showlegend=False, xaxis_title="Mês", yaxis_title="R$")
             st.plotly_chart(fig_bar, use_container_width=True)
         
         st.subheader("💳 Composição por Cartão e Tipo")
-        df_cartao_tipo = df_filtrado.groupby(["cartao", "tipo"])["valor"].sum().reset_index()
-        fig_stacked = px.bar(
-            df_cartao_tipo,
-            x="cartao",
-            y="valor",
-            color="tipo",
-            barmode="stack",
-            hover_data={"valor": ":.2f"},
-            color_discrete_sequence=px.colors.qualitative.Set2
-        )
+        df_cartao_tipo = df_filtrado.groupby(["cartao","tipo"])["valor"].sum().reset_index()
+        fig_stacked = px.bar(df_cartao_tipo, x="cartao", y="valor", color="tipo", barmode="stack", hover_data={"valor": ":.2f"},
+                             color_discrete_sequence=px.colors.qualitative.Set2)
         fig_stacked.update_layout(xaxis_title="Cartão", yaxis_title="R$", height=400)
         st.plotly_chart(fig_stacked, use_container_width=True)
         
-        # Tabela detalhada
+        # ==============================
+        # TABELA DETALHADA COM TOTAL
+        # ==============================
         st.subheader("📋 Detalhamento")
-        df_tabela = df_filtrado[["tipo", "descricao", "valor", "data_vencimento", "cartao", "parcela_atual", "numero_parcela"]].copy()
+        df_tabela = df_filtrado[["tipo","descricao","valor","data_vencimento","cartao","parcela_atual","numero_parcela"]].copy()
         df_tabela["data_vencimento"] = df_tabela["data_vencimento"].dt.strftime("%d/%m/%Y")
-        df_tabela["parcela"] = df_tabela["parcela_atual"].astype(str) + "/" + df_tabela["numero_parcela"].astype(str)
-        df_tabela = df_tabela[["tipo", "descricao", "valor", "data_vencimento", "cartao", "parcela"]]
-        df_tabela["valor"] = df_tabela["valor"].apply(lambda x: f"R$ {x:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+        df_tabela["parcela"] = df_tabela["parcela_atual"].astype(str)+"/"+df_tabela["numero_parcela"].astype(str)
+        df_tabela = df_tabela[["tipo","descricao","valor","data_vencimento","cartao","parcela"]]
+        df_tabela["valor"] = df_tabela["valor"].apply(lambda x:f"R$ {x:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
         st.dataframe(df_tabela, use_container_width=True, hide_index=True)
+        st.markdown(f"**💰 Total Filtrado:** R$ {total_filtrado:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
