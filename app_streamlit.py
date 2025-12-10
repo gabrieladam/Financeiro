@@ -2,26 +2,22 @@
 # -*- coding: utf-8 -*-
 """
 Dashboard Financeiro em Streamlit
-Versão melhorada com layout Tableau-like e interatividade
+Versão completa com KPIs Tableau-like, gráficos interativos e % de contas parceladas pelo valor
 """
 import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 from supabase import create_client, Client
 import hashlib
 
 # ==============================
 # CONFIGURAÇÃO DO SUPABASE
 # ==============================
-
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 
 # ==============================
 # CONFIGURAÇÃO DE ESTILO
@@ -36,9 +32,7 @@ st.set_page_config(
 # CSS customizado
 st.markdown("""
 <style>
-    .main {
-        padding-top: 0rem;
-    }
+    .main { padding-top: 0rem; }
     .metric-box {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 20px;
@@ -46,25 +40,15 @@ st.markdown("""
         color: white;
         text-align: center;
     }
-    .metric-value {
-        font-size: 28px;
-        font-weight: bold;
-        margin-top: 10px;
-    }
-    .metric-label {
-        font-size: 12px;
-        opacity: 0.8;
-        text-transform: uppercase;
-    }
+    .metric-value { font-size: 28px; font-weight: bold; margin-top: 10px; }
+    .metric-label { font-size: 12px; opacity: 0.8; text-transform: uppercase; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================
 # FUNÇÕES DE BANCO
 # ==============================
-
 def login(email: str, senha: str):
-    """Autentica usuário"""
     senha_hash = hashlib.sha256(senha.encode()).hexdigest()
     res = supabase.table("users").select("*").eq("email", email).eq("senha", senha_hash).execute()
     if res.data:
@@ -72,7 +56,6 @@ def login(email: str, senha: str):
     return False, None
 
 def criar_usuario(nome: str, email: str, senha: str):
-    """Cria novo usuário"""
     senha_hash = hashlib.sha256(senha.encode()).hexdigest()
     return supabase.table("users").insert({
         "nome": nome,
@@ -81,12 +64,10 @@ def criar_usuario(nome: str, email: str, senha: str):
     }).execute()
 
 def listar_installments(user_id: str):
-    """Lista lançamentos do usuário"""
     res = supabase.table("installments").select("*").eq("user_id", user_id).order("data_vencimento", desc=False).execute()
     return res.data
 
 def inserir_parcelas_futuras(user_id, tipo, descricao, valor, data_venc, parcelas, cartao):
-    """Insere parcelas"""
     from dateutil.relativedelta import relativedelta
     for num in range(1, parcelas + 1):
         venc = data_venc + relativedelta(months=num-1)
@@ -100,14 +81,6 @@ def inserir_parcelas_futuras(user_id, tipo, descricao, valor, data_venc, parcela
             "parcela_atual": num,
             "cartao": cartao
         }).execute()
-
-def update_installment(installment_id, fields: dict):
-    """Atualiza lançamento"""
-    return supabase.table("installments").update(fields).eq("id", installment_id).execute()
-
-def delete_installment(installment_id):
-    """Deleta lançamento"""
-    return supabase.table("installments").delete().eq("id", installment_id).execute()
 
 # ==============================
 # INICIALIZAÇÃO DE SESSÃO
@@ -124,7 +97,6 @@ if st.session_state.user is None:
     with col2:
         st.image("https://via.placeholder.com/200?text=Financeiro", width=100)
         st.title("💰 FinanceApp")
-        
         
         tab_login, tab_registro = st.tabs(["Login", "Registrar"])
         
@@ -175,13 +147,11 @@ else:
     
     st.divider()
     
-    # =============================
+    # ==============================
     # SIDEBAR - FILTROS
-    # =============================
+    # ==============================
     with st.sidebar:
         st.header("🔍 Filtros")
-        
-        # Buscar dados
         dados = listar_installments(user["id"])
         
         if not dados:
@@ -197,13 +167,10 @@ else:
             # Filtros
             anos = sorted(df["ano"].unique(), reverse=True)
             ano_sel = st.selectbox("Ano:", anos, index=0)
-            
             meses_disponiveis = sorted(df[df["ano"] == ano_sel]["mes_num"].unique())
             mes_sel = st.multiselect("Mês:", meses_disponiveis, default=meses_disponiveis)
-            
             tipos = sorted(df["tipo"].dropna().unique())
             tipo_sel = st.multiselect("Tipo:", tipos, default=tipos)
-            
             cartoes = sorted(df["cartao"].fillna("").unique())
             cartao_sel = st.multiselect("Cartão:", cartoes, default=cartoes)
             
@@ -215,9 +182,9 @@ else:
                 (df["cartao"].isin(cartao_sel))
             ]
             
-            # =============================
-            # SEÇÃO: ADICIONAR NOVO LANÇAMENTO
-            # =============================
+            # ==============================
+            # ADICIONAR NOVO LANÇAMENTO
+            # ==============================
             st.divider()
             st.subheader("➕ Novo Lançamento")
             
@@ -251,35 +218,42 @@ else:
                     except Exception as e:
                         st.error(f"Erro ao adicionar: {e}")
     
-    # =============================
+    # ==============================
     # KPIs - ESTATÍSTICAS
-    # =============================
+    # ==============================
     if not df_filtrado.empty:
-        col1, col2, col3, col4 = st.columns(4)
+        # Valores principais
+        total_geral = df["valor"].sum()
+        total_filtrado = df_filtrado["valor"].sum()
+        media = df_filtrado["valor"].mean()
+        num_transacoes = len(df_filtrado)
+        
+        # % Parceladas pelo valor
+        total_parceladas_valor = df_filtrado[df_filtrado["numero_parcela"] > 1]["valor"].sum()
+        if total_parceladas_valor > 0:
+            perc_parceladas_valor = (total_valores / total_parceladas_valor) * 100
+        else:
+            perc_parceladas_valor = 0
+        
+        # Layout com 5 métricas
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
-            total_geral = df["valor"].sum()
             st.metric("💵 Total Geral", f"R$ {total_geral:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        
         with col2:
-            total_filtrado = df_filtrado["valor"].sum()
             st.metric("📊 Total Filtrado", f"R$ {total_filtrado:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        
         with col3:
-            media = df_filtrado["valor"].mean()
             st.metric("📈 Média", f"R$ {media:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        
         with col4:
-            num_transacoes = len(df_filtrado)
             st.metric("📋 Transações", num_transacoes)
+        with col5:
+            st.metric("📦 % Parceladas (valor)", f"{perc_parceladas_valor:.2f}%")
         
         st.divider()
         
-        # =============================
+        # ==============================
         # GRÁFICOS COM PLOTLY
-        # =============================
-        
-        # Linha 1: Pie + Bar
+        # ==============================
         col_pie, col_bar = st.columns(2)
         
         with col_pie:
@@ -311,7 +285,6 @@ else:
             fig_bar.update_layout(showlegend=False, xaxis_title="Mês", yaxis_title="R$")
             st.plotly_chart(fig_bar, use_container_width=True)
         
-        # Linha 2: Stacked Bar por Cartão
         st.subheader("💳 Composição por Cartão e Tipo")
         df_cartao_tipo = df_filtrado.groupby(["cartao", "tipo"])["valor"].sum().reset_index()
         fig_stacked = px.bar(
@@ -326,14 +299,11 @@ else:
         fig_stacked.update_layout(xaxis_title="Cartão", yaxis_title="R$", height=400)
         st.plotly_chart(fig_stacked, use_container_width=True)
         
-        # Linha 3: Tabela detalhada
+        # Tabela detalhada
         st.subheader("📋 Detalhamento")
-        df_tabela = df_filtrado[[
-            "tipo", "descricao", "valor", "data_vencimento", "cartao", "parcela_atual", "numero_parcela"
-        ]].copy()
+        df_tabela = df_filtrado[["tipo", "descricao", "valor", "data_vencimento", "cartao", "parcela_atual", "numero_parcela"]].copy()
         df_tabela["data_vencimento"] = df_tabela["data_vencimento"].dt.strftime("%d/%m/%Y")
         df_tabela["parcela"] = df_tabela["parcela_atual"].astype(str) + "/" + df_tabela["numero_parcela"].astype(str)
         df_tabela = df_tabela[["tipo", "descricao", "valor", "data_vencimento", "cartao", "parcela"]]
         df_tabela["valor"] = df_tabela["valor"].apply(lambda x: f"R$ {x:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        
         st.dataframe(df_tabela, use_container_width=True, hide_index=True)
