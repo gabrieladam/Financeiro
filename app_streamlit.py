@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Dashboard Financeiro em Streamlit
-Versão otimizada com layout mais visual e responsivo
+Versão completa com gráficos atualizados em tons pastel e barras empilhadas por tipo
 """
 import os
 import streamlit as st
@@ -201,9 +201,7 @@ else:
         num_transacoes = len(df_filtrado)
         total_parceladas_valor = df_filtrado[df_filtrado["numero_parcela"]>1]["valor"].sum()
         perc_parceladas_valor = (total_parceladas_valor / total_filtrado * 100) if total_filtrado>0 else 0
-        perc_avista_valor = 100 - perc_parceladas_valor
         
-        # Responsividade: KPIs em 2 linhas se tela pequena
         kpi_cols = st.columns(5)
         kpi_cols[0].metric("💵 Total Geral", f"R$ {total_geral:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
         kpi_cols[1].metric("📊 Total Filtrado", f"R$ {total_filtrado:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
@@ -213,13 +211,13 @@ else:
         st.divider()
         
         # ==============================
-        # GRÁFICOS OTIMIZADOS
+        # GRÁFICOS
         # ==============================
         col1, col2 = st.columns([0.5,0.5])
         with col1:
             st.subheader("💧 Gastos por Tipo (Donut)")
             df_tipo = df_filtrado.groupby("tipo")["valor"].sum().reset_index()
-            fig_pie = px.pie(df_tipo, names="tipo", values="valor", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3,
+            fig_pie = px.pie(df_tipo, names="tipo", values="valor", hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel,
                              hover_data={"valor": ":.2f"})
             fig_pie.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig_pie, use_container_width=True)
@@ -229,19 +227,39 @@ else:
             df_mes = df.groupby(df["data_vencimento"].dt.to_period("M"))["valor"].sum().reset_index()
             df_mes.columns = ["mes", "valor"]
             df_mes["mes"] = df_mes["mes"].astype(str)
-            fig_bar = px.bar(df_mes, x="mes", y="valor", color="valor", color_continuous_scale="Viridis", hover_data={"valor": ":.2f"})
+            fig_bar = px.bar(
+                df_mes,
+                x="mes",
+                y="valor",
+                color="mes",
+                color_discrete_sequence=px.colors.qualitative.Pastel,
+                hover_data={"valor": ":.2f"}
+            )
             fig_bar.update_layout(showlegend=False, xaxis_title="Mês", yaxis_title="R$")
             st.plotly_chart(fig_bar, use_container_width=True)
         
-        st.subheader("💳 Composição por Cartão e Tipo")
-        df_cartao_tipo = df_filtrado.groupby(["cartao","tipo"])["valor"].sum().reset_index()
-        fig_stacked = px.bar(df_cartao_tipo, x="cartao", y="valor", color="tipo", barmode="stack", hover_data={"valor": ":.2f"},
-                             color_discrete_sequence=px.colors.qualitative.Set2)
-        fig_stacked.update_layout(xaxis_title="Cartão", yaxis_title="R$", height=400)
-        st.plotly_chart(fig_stacked, use_container_width=True)
+        # ==============================
+        # NOVO GRÁFICO: Barra Empilhada por Tipo ao Longo do Ano
+        # ==============================
+        st.subheader("📊 Gastos Mensais por Tipo (Ano Selecionado)")
+        df_mes_tipo = df_filtrado.groupby([df_filtrado["data_vencimento"].dt.to_period("M"), "tipo"])["valor"].sum().reset_index()
+        df_mes_tipo["mes"] = df_mes_tipo["data_vencimento"].dt.strftime("%b")
+        df_mes_tipo.sort_values("data_vencimento", inplace=True)
+        fig_stacked_tipo = px.bar(
+            df_mes_tipo,
+            x="mes",
+            y="valor",
+            color="tipo",
+            text="valor",
+            barmode="stack",
+            color_discrete_sequence=px.colors.qualitative.Pastel,
+            hover_data={"valor": ":.2f"}
+        )
+        fig_stacked_tipo.update_layout(xaxis_title="Mês", yaxis_title="R$", legend_title="Tipo de Gasto", height=400)
+        st.plotly_chart(fig_stacked_tipo, use_container_width=True)
         
         # ==============================
-        # TABELA DETALHADA COM TOTAL
+        # TABELA DETALHADA
         # ==============================
         st.subheader("📋 Detalhamento")
         df_tabela = df_filtrado[["tipo","descricao","valor","data_vencimento","cartao","parcela_atual","numero_parcela"]].copy()
