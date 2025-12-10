@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Dashboard Financeiro em Streamlit
-Versão completa com edição/exclusão de lançamentos e gráfico de barras empilhadas
+Versão completa com AgGrid para editar/excluir lançamentos
 """
 import os
 import streamlit as st
@@ -11,8 +11,7 @@ import plotly.express as px
 from datetime import datetime
 from supabase import create_client, Client
 import hashlib
-from dateutil.relativedelta import relativedelta
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # ==============================
 # CONFIGURAÇÃO DO SUPABASE
@@ -30,11 +29,13 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 st.markdown("""
 <style>
-.main { padding-top: 0rem; }
-.stMetric { padding: 10px; border-radius: 10px; text-align: center; }
+    .main {padding-top: 0rem;}
+    .metric-box {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                  padding: 20px; border-radius: 10px; color: white; text-align: center;}
+    .metric-value {font-size: 28px; font-weight: bold; margin-top: 10px;}
+    .metric-label {font-size: 12px; opacity: 0.8; text-transform: uppercase;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,9 +52,7 @@ def login(email: str, senha: str):
 def criar_usuario(nome: str, email: str, senha: str):
     senha_hash = hashlib.sha256(senha.encode()).hexdigest()
     return supabase.table("users").insert({
-        "nome": nome,
-        "email": email,
-        "senha": senha_hash
+        "nome": nome, "email": email, "senha": senha_hash
     }).execute()
 
 def listar_installments(user_id: str):
@@ -61,6 +60,7 @@ def listar_installments(user_id: str):
     return res.data
 
 def inserir_parcelas_futuras(user_id, tipo, descricao, valor, data_venc, parcelas, cartao):
+    from dateutil.relativedelta import relativedelta
     for num in range(1, parcelas + 1):
         venc = data_venc + relativedelta(months=num-1)
         supabase.table("installments").insert({
@@ -81,7 +81,7 @@ def delete_installment(installment_id):
     return supabase.table("installments").delete().eq("id", installment_id).execute()
 
 # ==============================
-# SESSÃO
+# INICIALIZAÇÃO DE SESSÃO
 # ==============================
 if "user" not in st.session_state:
     st.session_state.user = None
@@ -95,7 +95,6 @@ if st.session_state.user is None:
         st.image("https://via.placeholder.com/200?text=Financeiro", width=100)
         st.title("💰 FinanceApp")
         tab_login, tab_registro = st.tabs(["Login", "Registrar"])
-        
         with tab_login:
             st.subheader("Fazer Login")
             email_login = st.text_input("Email", key="email_login")
@@ -108,7 +107,6 @@ if st.session_state.user is None:
                     st.rerun()
                 else:
                     st.error("Email ou senha incorretos!")
-        
         with tab_registro:
             st.subheader("Criar Conta")
             nome_cad = st.text_input("Nome", key="nome_cad")
@@ -129,7 +127,7 @@ if st.session_state.user is None:
 # ==============================
 else:
     user = st.session_state.user
-    col_title, col_logout = st.columns([0.9,0.1])
+    col_title, col_logout = st.columns([0.9, 0.1])
     with col_title:
         st.title(f"💰 Dashboard Financeiro - {user['nome']}")
     with col_logout:
@@ -139,7 +137,7 @@ else:
     st.divider()
 
     # ==============================
-    # SIDEBAR
+    # SIDEBAR - FILTROS
     # ==============================
     with st.sidebar:
         st.header("🔍 Filtros")
@@ -153,32 +151,23 @@ else:
             df["ano"] = df["data_vencimento"].dt.strftime("%Y")
             df["mes_num"] = df["data_vencimento"].dt.strftime("%m")
             df["mes_nome"] = df["data_vencimento"].dt.strftime("%B")
-            
             anos = sorted(df["ano"].unique(), reverse=True)
             ano_sel = st.selectbox("Ano:", anos, index=0)
-            meses_disponiveis = sorted(df[df["ano"]==ano_sel]["mes_num"].unique())
-            mes_sel = st.multiselect("Mês:", meses_disponiveis, default=meses_disponiveis)
             tipos = sorted(df["tipo"].dropna().unique())
             tipo_sel = st.multiselect("Tipo:", tipos, default=tipos)
             cartoes = sorted(df["cartao"].fillna("").unique())
             cartao_sel = st.multiselect("Cartão:", cartoes, default=cartoes)
-            
             df_filtrado = df[
-                (df["ano"]==ano_sel) &
-                (df["mes_num"].isin(mes_sel)) &
+                (df["ano"] == ano_sel) &
                 (df["tipo"].isin(tipo_sel)) &
                 (df["cartao"].isin(cartao_sel))
             ]
-            
-            # ==============================
-            # NOVO LANÇAMENTO
-            # ==============================
+
+            # Novo Lançamento
             st.divider()
             st.subheader("➕ Novo Lançamento")
             with st.form("form_novo_lancamento"):
-                tipo_novo = st.selectbox(
-                    "Tipo:", ["Mercado","Alimentação","Saude","Transporte","Carro","Casa","Emprestimo","Roupa","Lazer"], key="tipo_novo"
-                )
+                tipo_novo = st.selectbox("Tipo:", ["Mercado","Alimentação","Saude","Transporte","Carro","Casa","Emprestimo","Roupa","Lazer"], key="tipo_novo")
                 desc_novo = st.text_input("Descrição", key="desc_novo")
                 valor_novo = st.number_input("Valor", min_value=0.0, step=0.01, key="valor_novo")
                 data_novo = st.date_input("Data de Vencimento", key="data_novo")
@@ -187,11 +176,7 @@ else:
                 submitted = st.form_submit_button("Adicionar", use_container_width=True, type="primary")
                 if submitted:
                     try:
-                        inserir_parcelas_futuras(
-                            user["id"], tipo_novo, desc_novo, valor_novo,
-                            datetime.combine(data_novo, datetime.min.time()),
-                            int(parcelas_novo), cartao_novo
-                        )
+                        inserir_parcelas_futuras(user["id"], tipo_novo, desc_novo, valor_novo, datetime.combine(data_novo, datetime.min.time()), int(parcelas_novo), cartao_novo)
                         st.success("Lançamento adicionado!")
                         st.rerun()
                     except Exception as e:
@@ -201,102 +186,103 @@ else:
     # KPIs
     # ==============================
     if not df_filtrado.empty:
+        col1, col2, col3, col4, col5 = st.columns(5)
         total_geral = df["valor"].sum()
         total_filtrado = df_filtrado["valor"].sum()
         media = df_filtrado["valor"].mean()
         num_transacoes = len(df_filtrado)
-        total_parceladas_valor = df_filtrado[df_filtrado["numero_parcela"]>1]["valor"].sum()
-        perc_parceladas_valor = (total_parceladas_valor / total_filtrado * 100) if total_filtrado>0 else 0
-        
-        kpi_cols = st.columns(5)
-        kpi_cols[0].metric("💵 Total Geral", f"R$ {total_geral:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        kpi_cols[1].metric("📊 Total Filtrado", f"R$ {total_filtrado:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        kpi_cols[2].metric("📈 Média", f"R$ {media:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
-        kpi_cols[3].metric("📋 Transações", num_transacoes)
-        kpi_cols[4].metric("📦 % Parceladas", f"{perc_parceladas_valor:.2f}%")
+        total_parceladas_valor = df_filtrado[df_filtrado["numero_parcela"] > 1]["valor"].sum()
+        perc_parceladas_valor = (total_parceladas_valor / total_filtrado * 100) if total_filtrado > 0 else 0
+        col1.metric("💵 Total Geral", f"R$ {total_geral:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+        col2.metric("📊 Total Filtrado", f"R$ {total_filtrado:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+        col3.metric("📈 Média", f"R$ {media:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+        col4.metric("📋 Transações", num_transacoes)
+        col5.metric("📦 % Parceladas", f"{perc_parceladas_valor:.2f}%")
         st.divider()
 
-    # ==============================
-    # GRÁFICOS
-    # ==============================
-        col1, col2 = st.columns([0.5,0.5])
-        with col1:
-            st.subheader("💧 Gastos por Tipo (Donut)")
+        # ==============================
+        # GRÁFICOS
+        # ==============================
+        col_pie, col_bar = st.columns(2)
+        # Pie
+        with col_pie:
+            st.subheader("💧 Gastos por Tipo")
             df_tipo = df_filtrado.groupby("tipo")["valor"].sum().reset_index()
-            fig_pie = px.pie(df_tipo, names="tipo", values="valor", hole=0.4,
-                             color_discrete_sequence=px.colors.qualitative.Pastel,
-                             hover_data={"valor": ":.2f"})
+            fig_pie = px.pie(df_tipo, names="tipo", values="valor", color_discrete_sequence=px.colors.qualitative.Set3, hover_data={"valor": ":.2f"})
             fig_pie.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig_pie, use_container_width=True)
-        
-        with col2:
+        # Barra
+        with col_bar:
             st.subheader("📅 Gastos por Mês")
             df_mes = df.groupby(df["data_vencimento"].dt.to_period("M"))["valor"].sum().reset_index()
-            df_mes.columns = ["mes", "valor"]
+            df_mes.columns = ["mes","valor"]
             df_mes["mes"] = df_mes["mes"].astype(str)
-            fig_bar = px.bar(
-                df_mes,
-                x="mes",
-                y="valor",
-                color="mes",
-                color_discrete_sequence=px.colors.qualitative.Pastel,
-                hover_data={"valor": ":.2f"}
-            )
+            fig_bar = px.bar(df_mes, x="mes", y="valor", color="valor", color_continuous_scale="Viridis", hover_data={"valor": ":.2f"})
             fig_bar.update_layout(showlegend=False, xaxis_title="Mês", yaxis_title="R$")
             st.plotly_chart(fig_bar, use_container_width=True)
 
-    # ==============================
-    # GESTÃO DE LANÇAMENTOS (EDITAR / EXCLUIR)
-    # ==============================
-        st.subheader("📝 Gerenciar Lançamentos")
-        gb = GridOptionsBuilder.from_dataframe(df_filtrado)
-        gb.configure_selection(selection_mode="single", use_checkbox=True)
-        gb.configure_columns(["valor"], type=["numericColumn","numberColumnFilter","customNumericFormat"], precision=2)
-        grid_options = gb.build()
-        grid_response = AgGrid(
-            df_filtrado,
-            gridOptions=grid_options,
-            height=300,
-            update_mode=GridUpdateMode.SELECTION_CHANGED,
-            allow_unsafe_jscode=True
-        )
+        # ==============================
+        # BARRAS EMPILHADAS POR TIPO (POR ANO)
+        # ==============================
+        st.subheader(f"💳 Gastos Mensais por Tipo (Ano {ano_sel})")
+        df_bar = df[df["ano"] == ano_sel].groupby(["mes_nome","tipo"])["valor"].sum().reset_index()
+        df_bar["mes_nome"] = pd.to_datetime(df_bar["mes_nome"], format="%B").dt.strftime("%B de %Y")
+        fig_stacked = px.bar(df_bar, x="mes_nome", y="valor", color="tipo", text="valor", barmode="stack", color_discrete_sequence=px.colors.qualitative.Pastel)
+        fig_stacked.update_traces(texttemplate='%{text:.2f}', textposition='inside')
+        fig_stacked.update_layout(xaxis_title="Mês", yaxis_title="R$", height=450)
+        st.plotly_chart(fig_stacked, use_container_width=True)
 
-        selected = grid_response.get('selected_rows', [])
-        if isinstance(selected, list) and len(selected) > 0:
-            sel = selected[0]
-            st.markdown(f"**Selecionado:** {sel['descricao']} - R$ {sel['valor']:.2f}")
-            col_edit, col_del = st.columns(2)
-            with col_edit:
-                if st.button("✏️ Editar", key="edit_button"):
-                    with st.form("form_editar"):
-                        tipo_edit = st.selectbox("Tipo", tipos, index=tipos.index(sel["tipo"]))
-                        desc_edit = st.text_input("Descrição", value=sel["descricao"])
-                        valor_edit = st.number_input("Valor", min_value=0.0, value=sel["valor"], step=0.01)
-                        data_edit = st.date_input("Data de Vencimento", value=pd.to_datetime(sel["data_vencimento"]))
-                        parcelas_edit = st.number_input("Parcelas", min_value=1, value=sel["numero_parcela"])
-                        cartao_edit = st.text_input("Cartão", value=sel.get("cartao",""))
-                        submitted_edit = st.form_submit_button("Salvar")
-                        if submitted_edit:
-                            # Atualiza lançamento
-                            update_installment(sel["id"], {
-                                "tipo": tipo_edit,
-                                "descricao": desc_edit,
-                                "valor": valor_edit,
-                                "data_vencimento": data_edit.strftime("%Y-%m-%d"),
-                                "numero_parcela": parcelas_edit,
-                                "cartao": cartao_edit
-                            })
-                            # Adiciona parcelas extras se aumentou
-                            if parcelas_edit > sel["numero_parcela"]:
-                                for p in range(sel["numero_parcela"]+1, parcelas_edit+1):
-                                    nova_data = pd.to_datetime(data_edit) + relativedelta(months=p-1)
-                                    inserir_parcelas_futuras(
-                                        user["id"], tipo_edit, desc_edit, valor_edit, nova_data, 1, cartao_edit
-                                    )
-                            st.success("Lançamento atualizado!")
-                            st.experimental_rerun()
-            with col_del:
-                if st.button("🗑️ Excluir", key="del_button"):
-                    delete_installment(sel["id"])
+        # ==============================
+        # TABELA DETALHADA COM AgGrid
+        # ==============================
+        st.subheader("📋 Detalhamento")
+        df_tabela = df_filtrado.copy()
+        df_tabela["parcela"] = df_tabela["parcela_atual"].astype(str) + "/" + df_tabela["numero_parcela"].astype(str)
+        df_tabela_display = df_tabela[["tipo","descricao","valor","data_vencimento","cartao","parcela"]].copy()
+        df_tabela_display["valor"] = df_tabela_display["valor"].apply(lambda x: f"R$ {x:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
+
+        gb = GridOptionsBuilder.from_dataframe(df_tabela_display)
+        gb.configure_selection("single", use_checkbox=False, suppressRowClickSelection=False)
+        gridOptions = gb.build()
+        grid_response = AgGrid(df_tabela_display, gridOptions=gridOptions, height=400,
+                               update_mode=GridUpdateMode.SELECTION_CHANGED,
+                               data_return_mode=DataReturnMode.FILTERED_AND_SORTED)
+
+        selected = grid_response["selected_rows"]
+        if selected:
+            selected_row_idx = selected[0]["_selectedRowNodeInfo"]["nodeId"]
+            selected_row = df_tabela.iloc[int(selected_row_idx)]
+            st.info(f"Linha selecionada: {selected_row['descricao']} - R$ {selected_row['valor']:.2f}")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✏️ Editar"):
+                    st.session_state.edit_id = selected_row["id"]
+            with col2:
+                if st.button("🗑️ Excluir"):
+                    delete_installment(selected_row["id"])
                     st.success("Lançamento excluído!")
+                    st.experimental_rerun()
+
+        # Formulário de edição
+        if "edit_id" in st.session_state:
+            row_edit = df_filtrado[df_filtrado["id"] == st.session_state.edit_id].iloc[0]
+            with st.form("form_edit"):
+                tipo_edit = st.selectbox("Tipo", tipos, index=tipos.index(row_edit["tipo"]))
+                desc_edit = st.text_input("Descrição", value=row_edit["descricao"])
+                valor_edit = st.number_input("Valor", min_value=0.0, value=row_edit["valor"], step=0.01)
+                data_edit = st.date_input("Data de Vencimento", value=row_edit["data_vencimento"])
+                parcelas_edit = st.number_input("Parcelas", min_value=1, value=row_edit["numero_parcela"])
+                cartao_edit = st.text_input("Cartão", value=row_edit["cartao"])
+                submitted_edit = st.form_submit_button("Salvar")
+                if submitted_edit:
+                    update_installment(row_edit["id"], {
+                        "tipo": tipo_edit,
+                        "descricao": desc_edit,
+                        "valor": valor_edit,
+                        "data_vencimento": data_edit.strftime("%Y-%m-%d"),
+                        "numero_parcela": parcelas_edit,
+                        "cartao": cartao_edit
+                    })
+                    st.success("Lançamento atualizado!")
+                    del st.session_state.edit_id
                     st.experimental_rerun()
