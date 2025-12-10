@@ -124,7 +124,7 @@ if st.session_state.user is None:
     with col2:
         st.image("https://via.placeholder.com/200?text=Financeiro", width=100)
         st.title("💰 FinanceApp")
-        st.write("Controle seus gastos com estilo")
+        
         
         tab_login, tab_registro = st.tabs(["Login", "Registrar"])
         
