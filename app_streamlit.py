@@ -222,7 +222,6 @@ else:
     # KPIs - ESTATÍSTICAS
     # ==============================
     if not df_filtrado.empty:
-        # Valores principais
         total_geral = df["valor"].sum()
         total_filtrado = df_filtrado["valor"].sum()
         media = df_filtrado["valor"].mean()
@@ -231,13 +230,11 @@ else:
         # % Parceladas pelo valor
         total_parceladas_valor = df_filtrado[df_filtrado["numero_parcela"] > 1]["valor"].sum()
         if total_parceladas_valor > 0:
-            perc_parceladas_valor = (total_valores / total_parceladas_valor) * 100
+            perc_parceladas_valor = (total_filtrado / total_parceladas_valor) * 100
         else:
             perc_parceladas_valor = 0
         
-        # Layout com 5 métricas
         col1, col2, col3, col4, col5 = st.columns(5)
-        
         with col1:
             st.metric("💵 Total Geral", f"R$ {total_geral:,.2f}".replace(',', '_').replace('.', ',').replace('_', '.'))
         with col2:
