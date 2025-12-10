@@ -240,10 +240,10 @@ else:
             st.plotly_chart(fig_bar, use_container_width=True)
         
         # ==============================
-        # GRÁFICO BARRA EMPILHADA POR MÊS E TIPO
+        # GRÁFICO BARRA EMPILHADA POR MÊS E TIPO (somente ano)
         # ==============================
         st.subheader("📊 Gastos Mensais por Tipo (Ano Selecionado)")
-        df_mes_tipo = df_filtrado.groupby([df_filtrado["data_vencimento"].dt.to_period("M"), "tipo"])["valor"].sum().reset_index()
+        df_mes_tipo = df[df["ano"]==ano_sel].groupby([df["data_vencimento"].dt.to_period("M"), "tipo"])["valor"].sum().reset_index()
         df_mes_tipo["mes_ano"] = df_mes_tipo["data_vencimento"].dt.strftime("%B de %Y")
         df_mes_tipo.sort_values("data_vencimento", inplace=True)
         
